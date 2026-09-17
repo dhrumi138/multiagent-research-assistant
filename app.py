@@ -6,7 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from xml.sax.saxutils import escape
 from io import BytesIO
-
+import re
 from pipeline import run_research_pipeline
 
 st.set_page_config(
@@ -138,14 +138,27 @@ if "result" in st.session_state:
 
             for paragraph in report.split("\n"):
                 if paragraph.strip():
-                    story.append(
-                        Paragraph(
-                            escape(paragraph),
-                            styles["BodyText"]
-                        )
-                    )
-                    story.append(Spacer(1, 8))
 
+                 paragraph = paragraph.replace("\u2011", "-")
+                 paragraph = paragraph.replace("\u2013", "-")
+                 paragraph = paragraph.replace("\u2014", "-")
+                 paragraph = paragraph.replace("\u2018", "'")
+                 paragraph = paragraph.replace("\u2019", "'")
+                 paragraph = paragraph.replace("\u201c", '"')
+                 paragraph = paragraph.replace("\u201d", '"')
+                 paragraph = paragraph.replace("\u00a0", " ")
+                 paragraph = paragraph.replace("•", "-")
+
+                 paragraph = escape(paragraph)
+
+                 story.append(
+                     Paragraph(
+                        paragraph,
+                        styles["BodyText"]
+                  )
+              )
+
+            story.append(Spacer(1, 8))
             doc.build(story)
 
             st.download_button(
