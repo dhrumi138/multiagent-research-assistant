@@ -1,6 +1,10 @@
 import streamlit as st
 import time
 import traceback
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
 
 from pipeline import run_research_pipeline
 
@@ -107,19 +111,55 @@ if "result" in st.session_state:
 
     with tab1:
         report = get_content(result.get("report"))
+
         if report:
             st.markdown(report)
+
+            # Create a real PDF
+            pdf_buffer = BytesIO()
+
+            doc = SimpleDocTemplate(
+                pdf_buffer,
+                pagesize=letter
+            )
+
+            styles = getSampleStyleSheet()
+            story = []
+
+            story.append(
+                Paragraph(
+                    "Multi-Agent Research Report",
+                    styles["Title"]
+                )
+            )
+
+            story.append(Spacer(1, 20))
+
+            for paragraph in report.split("\n"):
+                if paragraph.strip():
+                    story.append(
+                        Paragraph(
+                            paragraph.replace("&", "&amp;"),
+                            styles["BodyText"]
+                        )
+                    )
+                    story.append(Spacer(1, 8))
+
+            doc.build(story)
+
             st.download_button(
                 "⬇️ Download Report",
-                report,
-                file_name="research_report.md",
-                mime="text/markdown",
+                pdf_buffer.getvalue(),
+                file_name="research_report.pdf",
+                mime="application/pdf",
             )
+
         else:
             st.info("No final report was returned.")
 
     with tab2:
         feedback = get_content(result.get("feedback"))
+
         if feedback:
             st.markdown(feedback)
         else:
@@ -127,6 +167,7 @@ if "result" in st.session_state:
 
     with tab3:
         search_results = get_content(result.get("search_results"))
+
         if search_results:
             st.text_area(
                 "Search Results",
@@ -138,6 +179,7 @@ if "result" in st.session_state:
 
     with tab4:
         scraped_content = get_content(result.get("scraped_content"))
+
         if scraped_content:
             st.text_area(
                 "Scraped Content",
