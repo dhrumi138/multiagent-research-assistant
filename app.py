@@ -4,6 +4,7 @@ import traceback
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from xml.sax.saxutils import escape
 from io import BytesIO
 
 from pipeline import run_research_pipeline
@@ -139,7 +140,7 @@ if "result" in st.session_state:
                 if paragraph.strip():
                     story.append(
                         Paragraph(
-                            paragraph.replace("&", "&amp;"),
+                            escape(paragraph),
                             styles["BodyText"]
                         )
                     )
