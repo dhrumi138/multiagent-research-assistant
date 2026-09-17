@@ -18,10 +18,7 @@ st.caption("Search → Read → Write → Critique")
 # -----------------------------
 with st.sidebar:
     st.header("Research Agent")
-    st.write(
-        "This UI runs your existing `run_research_pipeline()` "
-        "from `pipeline.py`."
-    )
+ 
     st.divider()
     st.write("**Pipeline**")
     st.write("1. 🔍 Search Agent")
