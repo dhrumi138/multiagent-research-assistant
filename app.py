@@ -2,11 +2,19 @@ import streamlit as st
 import time
 import traceback
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 from xml.sax.saxutils import escape
 from io import BytesIO
 import re
+
 from pipeline import run_research_pipeline
 
 st.set_page_config(
@@ -110,21 +118,304 @@ if "result" in st.session_state:
 
         return str(value)
 
+    # -----------------------------
+    # PDF formatting helpers
+    # -----------------------------
+    def clean_pdf_text(text):
+        text = text.replace("\u2011", "-")
+        text = text.replace("\u2013", "-")
+        text = text.replace("\u2014", "-")
+        text = text.replace("\u2018", "'")
+        text = text.replace("\u2019", "'")
+        text = text.replace("\u201c", '"')
+        text = text.replace("\u201d", '"')
+        text = text.replace("\u00a0", " ")
+
+        # Convert HTML line breaks
+        text = re.sub(
+            r"<br\s*/?>",
+            "\n",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        return text
+
+    def markdown_to_pdf_elements(report, styles, doc):
+        elements = []
+        lines = report.split("\n")
+
+        i = 0
+
+        while i < len(lines):
+            line = lines[i].strip()
+
+            # Empty line
+            if not line:
+                elements.append(Spacer(1, 8))
+                i += 1
+                continue
+
+            # -----------------------------
+            # Markdown table
+            # -----------------------------
+            if line.startswith("|") and "|" in line:
+
+                table_lines = []
+
+                while (
+                    i < len(lines)
+                    and lines[i].strip().startswith("|")
+                ):
+                    table_lines.append(lines[i].strip())
+                    i += 1
+
+                table_data = []
+
+                for table_line in table_lines:
+
+                    # Skip Markdown separator row
+                    if re.match(
+                        r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?$",
+                        table_line
+                    ):
+                        continue
+
+                    cells = [
+                        cell.strip()
+                        for cell in table_line.strip("|").split("|")
+                    ]
+
+                    formatted_cells = []
+
+                    for cell in cells:
+                        cell = clean_pdf_text(cell)
+                        cell = escape(cell)
+
+                        # Markdown bold
+                        cell = re.sub(
+                            r"\*\*(.*?)\*\*",
+                            r"<b>\1</b>",
+                            cell
+                        )
+
+                        # Markdown italic
+                        cell = re.sub(
+                            r"(?<!\*)\*(?!\*)(.*?)\*(?!\*)",
+                            r"<i>\1</i>",
+                            cell
+                        )
+
+                        formatted_cells.append(
+                            Paragraph(
+                                cell,
+                                styles["BodyText"]
+                            )
+                        )
+
+                    table_data.append(formatted_cells)
+
+                if table_data:
+
+                    column_count = len(table_data[0])
+
+                    table = Table(
+                        table_data,
+                        colWidths=[
+                            doc.width / column_count
+                        ] * column_count,
+                        repeatRows=1,
+                    )
+
+                    table.setStyle(
+                        TableStyle([
+                            (
+                                "GRID",
+                                (0, 0),
+                                (-1, -1),
+                                0.5,
+                                colors.grey,
+                            ),
+                            (
+                                "BACKGROUND",
+                                (0, 0),
+                                (-1, 0),
+                                colors.lightgrey,
+                            ),
+                            (
+                                "VALIGN",
+                                (0, 0),
+                                (-1, -1),
+                                "TOP",
+                            ),
+                            (
+                                "LEFTPADDING",
+                                (0, 0),
+                                (-1, -1),
+                                6,
+                            ),
+                            (
+                                "RIGHTPADDING",
+                                (0, 0),
+                                (-1, -1),
+                                6,
+                            ),
+                            (
+                                "TOPPADDING",
+                                (0, 0),
+                                (-1, -1),
+                                6,
+                            ),
+                            (
+                                "BOTTOMPADDING",
+                                (0, 0),
+                                (-1, -1),
+                                6,
+                            ),
+                        ])
+                    )
+
+                    elements.append(table)
+                    elements.append(Spacer(1, 12))
+
+                continue
+
+            # -----------------------------
+            # Main heading
+            # -----------------------------
+            if line.startswith("# "):
+
+                text = clean_pdf_text(line[2:])
+                text = escape(text)
+
+                elements.append(
+                    Paragraph(
+                        text,
+                        styles["Heading1"]
+                    )
+                )
+
+            # -----------------------------
+            # Section heading
+            # -----------------------------
+            elif line.startswith("## "):
+
+                text = clean_pdf_text(line[3:])
+                text = escape(text)
+
+                elements.append(
+                    Paragraph(
+                        text,
+                        styles["Heading2"]
+                    )
+                )
+
+            # -----------------------------
+            # Subsection heading
+            # -----------------------------
+            elif line.startswith("### "):
+
+                text = clean_pdf_text(line[4:])
+                text = escape(text)
+
+                elements.append(
+                    Paragraph(
+                        text,
+                        styles["Heading3"]
+                    )
+                )
+
+            # -----------------------------
+            # Horizontal rule
+            # -----------------------------
+            elif line in ["---", "***", "___"]:
+
+                elements.append(
+                    Spacer(1, 5)
+                )
+
+            # -----------------------------
+            # Normal paragraph
+            # -----------------------------
+            else:
+
+                text = clean_pdf_text(line)
+                text = escape(text)
+
+                # Markdown bold
+                text = re.sub(
+                    r"\*\*(.*?)\*\*",
+                    r"<b>\1</b>",
+                    text
+                )
+
+                # Markdown italic
+                text = re.sub(
+                    r"(?<!\*)\*(?!\*)(.*?)\*(?!\*)",
+                    r"<i>\1</i>",
+                    text
+                )
+
+                elements.append(
+                    Paragraph(
+                        text,
+                        styles["BodyText"]
+                    )
+                )
+
+            elements.append(Spacer(1, 8))
+
+            i += 1
+
+        return elements
+
+    # -----------------------------
+    # Final Report
+    # -----------------------------
     with tab1:
+
         report = get_content(result.get("report"))
 
         if report:
+
             st.markdown(report)
 
-            # Create a real PDF
+            # Create professional PDF
             pdf_buffer = BytesIO()
 
             doc = SimpleDocTemplate(
                 pdf_buffer,
-                pagesize=letter
+                pagesize=letter,
+                rightMargin=50,
+                leftMargin=50,
+                topMargin=50,
+                bottomMargin=50,
             )
 
             styles = getSampleStyleSheet()
+
+            styles["Title"].fontSize = 24
+            styles["Title"].leading = 28
+            styles["Title"].spaceAfter = 20
+
+            styles["Heading1"].fontSize = 18
+            styles["Heading1"].leading = 22
+            styles["Heading1"].spaceBefore = 12
+            styles["Heading1"].spaceAfter = 10
+
+            styles["Heading2"].fontSize = 15
+            styles["Heading2"].leading = 19
+            styles["Heading2"].spaceBefore = 10
+            styles["Heading2"].spaceAfter = 8
+
+            styles["Heading3"].fontSize = 13
+            styles["Heading3"].leading = 17
+            styles["Heading3"].spaceBefore = 8
+            styles["Heading3"].spaceAfter = 6
+
+            styles["BodyText"].fontSize = 10
+            styles["BodyText"].leading = 15
+
             story = []
 
             story.append(
@@ -134,31 +425,16 @@ if "result" in st.session_state:
                 )
             )
 
-            story.append(Spacer(1, 20))
+            story.append(Spacer(1, 10))
 
-            for paragraph in report.split("\n"):
-                if paragraph.strip():
+            story.extend(
+                markdown_to_pdf_elements(
+                    report,
+                    styles,
+                    doc
+                )
+            )
 
-                 paragraph = paragraph.replace("\u2011", "-")
-                 paragraph = paragraph.replace("\u2013", "-")
-                 paragraph = paragraph.replace("\u2014", "-")
-                 paragraph = paragraph.replace("\u2018", "'")
-                 paragraph = paragraph.replace("\u2019", "'")
-                 paragraph = paragraph.replace("\u201c", '"')
-                 paragraph = paragraph.replace("\u201d", '"')
-                 paragraph = paragraph.replace("\u00a0", " ")
-                 paragraph = paragraph.replace("•", "-")
-
-                 paragraph = escape(paragraph)
-
-                 story.append(
-                     Paragraph(
-                        paragraph,
-                        styles["BodyText"]
-                  )
-              )
-
-            story.append(Spacer(1, 8))
             doc.build(story)
 
             st.download_button(
@@ -171,7 +447,11 @@ if "result" in st.session_state:
         else:
             st.info("No final report was returned.")
 
+    # -----------------------------
+    # Critic Feedback
+    # -----------------------------
     with tab2:
+
         feedback = get_content(result.get("feedback"))
 
         if feedback:
@@ -179,8 +459,14 @@ if "result" in st.session_state:
         else:
             st.info("No critic feedback was returned.")
 
+    # -----------------------------
+    # Search Results
+    # -----------------------------
     with tab3:
-        search_results = get_content(result.get("search_results"))
+
+        search_results = get_content(
+            result.get("search_results")
+        )
 
         if search_results:
             st.text_area(
@@ -191,8 +477,14 @@ if "result" in st.session_state:
         else:
             st.info("No search results were returned.")
 
+    # -----------------------------
+    # Scraped Content
+    # -----------------------------
     with tab4:
-        scraped_content = get_content(result.get("scraped_content"))
+
+        scraped_content = get_content(
+            result.get("scraped_content")
+        )
 
         if scraped_content:
             st.text_area(
